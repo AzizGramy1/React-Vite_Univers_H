@@ -66,7 +66,7 @@ const Planning = () => {
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-2xl font-bold text-gray-800">Planning</h1>
         <button 
-          onClick={() => toast.info('Formulaire d\'ajout d\'événement')}
+          onClick={() => toast('Formulaire d\'ajout d\'événement', { icon: '🗓️' })}
           className="bg-cyan-600 text-white px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-cyan-700 transition-colors"
         >
           <Plus size={20} /> Ajouter

@@ -1,13 +1,25 @@
 // src/pages/Suppliers.jsx
-import React, { useState, useEffect } from 'react';
-import { getSuppliers, deleteSupplier } from '../api/endpoints';
+import React, { useEffect, useMemo, useState } from 'react';
+import { getSuppliers, deleteSupplier, updateSupplier, createSupplier } from '../api/endpoints';
 import toast from 'react-hot-toast';
-import { Plus, Edit, Trash2, Search, Truck } from 'lucide-react';
+import { Plus, Edit, Trash2, Search, Truck, Save, X, RefreshCw, Mail, Phone } from 'lucide-react';
+
+const emptySupplierForm = {
+  name: '',
+  contact: '',
+  phone: '',
+  email: '',
+  address: '',
+  active: 'true'
+};
 
 const Suppliers = () => {
   const [suppliers, setSuppliers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
+  const [editingSupplier, setEditingSupplier] = useState(null);
+  const [isCreating, setIsCreating] = useState(false);
+  const [formData, setFormData] = useState(emptySupplierForm);
 
   useEffect(() => {
     fetchSuppliers();
@@ -36,92 +48,208 @@ const Suppliers = () => {
     }
   };
 
-  const filteredSuppliers = suppliers.filter(s =>
-    s.name?.toLowerCase().includes(search.toLowerCase()) ||
-    s.contact?.toLowerCase().includes(search.toLowerCase())
+  const openEditModal = (supplier) => {
+    setEditingSupplier(supplier);
+    setFormData({
+      name: supplier.name || '',
+      contact: supplier.contact || '',
+      phone: supplier.phone || '',
+      email: supplier.email || '',
+      address: supplier.address || '',
+      active: supplier.active ? 'true' : 'false'
+    });
+  };
+
+  const closeEditModal = () => {
+    setEditingSupplier(null);
+    setIsCreating(false);
+    setFormData(emptySupplierForm);
+  };
+
+  const openCreateModal = () => {
+    setIsCreating(true);
+    setEditingSupplier(null);
+    setFormData(emptySupplierForm);
+  };
+
+  const handleSaveEdit = async (event) => {
+    event.preventDefault();
+
+    if (!editingSupplier) return;
+    if (!formData.name.trim() || !formData.email.trim()) {
+      toast.error('Le nom et l’email sont requis');
+      return;
+    }
+
+    try {
+      if (isCreating) {
+        await createSupplier({
+          ...formData,
+          active: formData.active === 'true'
+        });
+        toast.success('Fournisseur ajouté');
+      } else {
+        await updateSupplier(editingSupplier.id, {
+          ...editingSupplier,
+          ...formData,
+          active: formData.active === 'true'
+        });
+        toast.success('Fournisseur mis à jour');
+      }
+      closeEditModal();
+      fetchSuppliers();
+    } catch (error) {
+      toast.error(isCreating ? 'Erreur lors de l’ajout' : 'Erreur lors de la mise à jour');
+    }
+  };
+
+  const filteredSuppliers = useMemo(() =>
+    suppliers.filter((supplier) => {
+      const searchValue = search.toLowerCase();
+      return (
+        supplier.name?.toLowerCase().includes(searchValue) ||
+        supplier.contact?.toLowerCase().includes(searchValue) ||
+        supplier.email?.toLowerCase().includes(searchValue)
+      );
+    }),
+    [suppliers, search]
   );
+
+  const summary = useMemo(() => ({
+    total: suppliers.length,
+    activeCount: suppliers.filter((supplier) => supplier.active).length,
+    contactCount: suppliers.filter((supplier) => supplier.contact).length
+  }), [suppliers]);
 
   return (
     <div>
-      <div className="flex justify-between items-center mb-6">
-        <h1 className="text-2xl font-bold text-gray-800">Fournisseurs</h1>
-        <button 
-          onClick={() => toast.info('Formulaire d\'ajout de fournisseur')}
-          className="bg-cyan-600 text-white px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-cyan-700 transition-colors"
-        >
-          <Plus size={20} /> Ajouter
-        </button>
-      </div>
-
-      <div className="bg-white rounded-xl shadow-sm p-4 mb-6">
-        <div className="flex flex-wrap gap-4">
-          <div className="flex-1 min-w-[200px]">
-            <div className="relative">
-              <Search className="absolute left-3 top-2.5 text-gray-400" size={18} />
-              <input
-                type="text"
-                placeholder="Rechercher un fournisseur..."
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:outline-none"
-              />
-            </div>
-          </div>
+      <div className="page-head">
+        <div>
+          <div className="page-head-title">Fournisseurs</div>
+          <div className="page-head-sub">Gestion des partenaires et contacts fournisseurs</div>
+        </div>
+        <div className="page-head-actions">
+          <button onClick={fetchSuppliers} className="btn-ghost">
+            <RefreshCw size={18} /> Rafraîchir
+          </button>
+          <button onClick={openCreateModal} className="btn-primary">
+            <Plus size={18} /> Ajouter
+          </button>
         </div>
       </div>
 
-      <div className="bg-white rounded-xl shadow-sm overflow-hidden">
+      <div className="order-summary-grid">
+        <div className="kpi-card order-summary-card">
+          <div className="kpi-top">
+            <div>
+              <div className="kpi-label">Fournisseurs</div>
+              <div className="kpi-value">{summary.total}</div>
+            </div>
+            <div className="kpi-icon" style={{ background: 'rgba(14, 165, 201, 0.12)', color: 'var(--aqua)' }}>
+              <Truck size={20} />
+            </div>
+          </div>
+          <div className="order-summary-meta">Partenaires enregistrés</div>
+        </div>
+
+        <div className="kpi-card order-summary-card">
+          <div className="kpi-top">
+            <div>
+              <div className="kpi-label">Actifs</div>
+              <div className="kpi-value">{summary.activeCount}</div>
+            </div>
+            <div className="kpi-icon" style={{ background: 'rgba(16, 185, 129, 0.12)', color: 'var(--mint)' }}>
+              <Truck size={20} />
+            </div>
+          </div>
+          <div className="order-summary-meta">Relations actives</div>
+        </div>
+
+        <div className="kpi-card order-summary-card">
+          <div className="kpi-top">
+            <div>
+              <div className="kpi-label">Contacts</div>
+              <div className="kpi-value">{summary.contactCount}</div>
+            </div>
+            <div className="kpi-icon" style={{ background: 'rgba(139, 92, 246, 0.12)', color: 'var(--violet)' }}>
+              <Mail size={20} />
+            </div>
+          </div>
+          <div className="order-summary-meta">Contacts renseignés</div>
+        </div>
+      </div>
+
+      <div className="table-card">
+        <div className="toolbar">
+          <div className="search-box">
+            <Search size={16} />
+            <input
+              type="text"
+              placeholder="Rechercher un fournisseur, contact ou email..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+          </div>
+        </div>
+
         <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead className="bg-gray-50">
+          <table>
+            <thead>
               <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Fournisseur</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Contact</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Téléphone</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Email</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Statut</th>
-                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Actions</th>
+                <th>Fournisseur</th>
+                <th>Contact</th>
+                <th>Téléphone</th>
+                <th>Email</th>
+                <th>Statut</th>
+                <th>Actions</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-200">
+            <tbody>
               {loading ? (
-                <tr><td colSpan="6" className="text-center py-4">Chargement...</td></tr>
+                <tr><td colSpan="6" className="table-loader">Chargement...</td></tr>
               ) : filteredSuppliers.length === 0 ? (
-                <tr><td colSpan="6" className="text-center py-4 text-gray-500">Aucun fournisseur</td></tr>
+                <tr><td colSpan="6" className="table-empty">Aucun fournisseur trouvé</td></tr>
               ) : (
                 filteredSuppliers.map((supplier) => (
-                  <tr key={supplier.id} className="hover:bg-gray-50">
-                    <td className="px-6 py-4">
-                      <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 bg-blue-100 text-blue-700 rounded-full flex items-center justify-center">
-                          <Truck size={20} />
-                        </div>
+                  <tr key={supplier.id}>
+                    <td>
+                      <div className="cell-prod">
+                        <div className="cell-emoji">🚚</div>
                         <div>
-                          <p className="font-medium text-gray-800">{supplier.name}</p>
-                          <p className="text-sm text-gray-500">{supplier.address}</p>
+                          <div className="order-client-name">{supplier.name}</div>
+                          <div className="order-client-meta">{supplier.address || 'Adresse non renseignée'}</div>
                         </div>
                       </div>
                     </td>
-                    <td className="px-6 py-4 text-gray-600">{supplier.contact}</td>
-                    <td className="px-6 py-4 text-gray-600">{supplier.phone}</td>
-                    <td className="px-6 py-4 text-gray-600">{supplier.email}</td>
-                    <td className="px-6 py-4">
-                      <span className={`px-2 py-1 rounded-full text-xs ${
-                        supplier.active ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-700'
-                      }`}>
+                    <td>
+                      <div className="order-client-name">{supplier.contact || '—'}</div>
+                    </td>
+                    <td>
+                      <div className="order-client-name">{supplier.phone || '—'}</div>
+                    </td>
+                    <td>
+                      <div className="order-client-name">{supplier.email || '—'}</div>
+                    </td>
+                    <td>
+                      <span className={supplier.active ? 'badge b-livree' : 'badge b-inactif'}>
                         {supplier.active ? 'Actif' : 'Inactif'}
                       </span>
                     </td>
-                    <td className="px-6 py-4 text-right">
-                      <div className="flex justify-end gap-2">
-                        <button className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors">
-                          <Edit size={18} />
-                        </button>
-                        <button 
-                          onClick={() => handleDelete(supplier.id)}
-                          className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                    <td>
+                      <div className="order-action-box">
+                        <button
+                          className="icon-btn"
+                          aria-label={`Modifier ${supplier.name}`}
+                          onClick={() => openEditModal(supplier)}
                         >
-                          <Trash2 size={18} />
+                          <Edit size={16} />
+                        </button>
+                        <button
+                          onClick={() => handleDelete(supplier.id)}
+                          className="icon-btn"
+                          aria-label={`Supprimer ${supplier.name}`}
+                        >
+                          <Trash2 size={16} />
                         </button>
                       </div>
                     </td>
@@ -130,6 +258,97 @@ const Suppliers = () => {
               )}
             </tbody>
           </table>
+        </div>
+      </div>
+
+      <div className={`modal-overlay ${editingSupplier || isCreating ? 'open' : ''}`}>
+        <div className="modal">
+          <div className="modal-hd">
+            <div>
+              <div className="modal-hd-title">{isCreating ? 'Ajouter un fournisseur' : 'Modifier le fournisseur'}</div>
+              <div className="modal-hd-sub">{isCreating ? 'Créez un nouveau partenaire' : 'Mettez à jour les informations du partenaire'}</div>
+            </div>
+            <button type="button" className="modal-x" onClick={closeEditModal}>
+              <X size={16} />
+            </button>
+          </div>
+
+          <form onSubmit={handleSaveEdit}>
+            <div className="modal-body">
+              <div className="f-row2">
+                <div className="f-group">
+                  <label className="f-label">Nom</label>
+                  <input
+                    className="f-input"
+                    value={formData.name}
+                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                    placeholder="Nom du fournisseur"
+                  />
+                </div>
+                <div className="f-group">
+                  <label className="f-label">Contact</label>
+                  <input
+                    className="f-input"
+                    value={formData.contact}
+                    onChange={(e) => setFormData({ ...formData, contact: e.target.value })}
+                    placeholder="Nom du contact"
+                  />
+                </div>
+              </div>
+
+              <div className="f-row2">
+                <div className="f-group">
+                  <label className="f-label">Téléphone</label>
+                  <input
+                    className="f-input"
+                    value={formData.phone}
+                    onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                    placeholder="Téléphone"
+                  />
+                </div>
+                <div className="f-group">
+                  <label className="f-label">Email</label>
+                  <input
+                    className="f-input"
+                    value={formData.email}
+                    onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                    placeholder="Email"
+                  />
+                </div>
+              </div>
+
+              <div className="f-group">
+                <label className="f-label">Adresse</label>
+                <input
+                  className="f-input"
+                  value={formData.address}
+                  onChange={(e) => setFormData({ ...formData, address: e.target.value })}
+                  placeholder="Adresse"
+                />
+              </div>
+
+              <div className="f-group">
+                <label className="f-label">Statut</label>
+                <select
+                  className="f-input"
+                  value={formData.active}
+                  onChange={(e) => setFormData({ ...formData, active: e.target.value })}
+                >
+                  <option value="true">Actif</option>
+                  <option value="false">Inactif</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="modal-ft">
+              <button type="button" className="btn-ghost" onClick={closeEditModal}>
+                <X size={16} /> Annuler
+              </button>
+              <button type="submit" className="btn-primary">
+                <Save size={16} /> Enregistrer
+              </button>
+            </div>
+          </form>
         </div>
       </div>
     </div>

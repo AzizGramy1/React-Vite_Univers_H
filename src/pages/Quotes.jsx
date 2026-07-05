@@ -1,27 +1,101 @@
 // src/pages/Quotes.jsx
-import React, { useState, useEffect } from 'react';
-import { getQuotes, deleteQuote } from '../api/endpoints';
+import React, { useEffect, useMemo, useState } from 'react';
+import { getQuotes, deleteQuote, getClients } from '../api/endpoints';
 import toast from 'react-hot-toast';
-import { Plus, Edit, Trash2, Search, FileCheck, Eye } from 'lucide-react';
+import { Plus, Trash2, Search, FileCheck, Eye, RefreshCw, X } from 'lucide-react';
 
 const Quotes = () => {
   const [quotes, setQuotes] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [filters, setFilters] = useState({ status: 'all' });
+  const [selectedQuote, setSelectedQuote] = useState(null);
+  const [clients, setClients] = useState([]);
+
+  useEffect(() => {
+    fetchClients();
+  }, []);
 
   useEffect(() => {
     fetchQuotes();
   }, [filters]);
+
+  const formatDate = (value) => {
+    if (!value) return '—';
+    if (value instanceof Date) {
+      return value.toLocaleDateString('fr-FR');
+    }
+    if (typeof value === 'object') {
+      if (typeof value.toDate === 'function') {
+        return value.toDate().toLocaleDateString('fr-FR');
+      }
+      if (typeof value._seconds === 'number') {
+        const timestamp = value._seconds * 1000 + ((value._nanoseconds || 0) / 1000000);
+        return new Date(timestamp).toLocaleDateString('fr-FR');
+      }
+    }
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) return '—';
+    return parsed.toLocaleDateString('fr-FR');
+  };
+
+  const extractQuotes = (payload) => {
+    if (Array.isArray(payload)) return payload;
+    if (Array.isArray(payload?.data)) return payload.data;
+    if (Array.isArray(payload?.quotes)) return payload.quotes;
+    if (Array.isArray(payload?.items)) return payload.items;
+    if (payload?.data && typeof payload.data === 'object' && Array.isArray(payload.data.quotes)) return payload.data.quotes;
+    return [];
+  };
+
+  const resolveValue = (object, paths) => {
+    for (const path of paths) {
+      const value = path.split('.').reduce((current, key) => current?.[key], object);
+      if (value !== undefined && value !== null && value !== '') return value;
+    }
+    return null;
+  };
+
+  const getQuoteClient = (quote) => {
+    if (quote.client) return quote.client;
+    if (quote.clientId && clientMap.has(quote.clientId)) return clientMap.get(quote.clientId);
+    return null;
+  };
+
+  const getQuoteClientName = (quote) => {
+    const client = getQuoteClient(quote);
+    const name = resolveValue({ ...quote, client }, ['clientName', 'client.name', 'client.companyName', 'client.contactName', 'customerName', 'name', 'companyName', 'contactName']);
+    return name || '—';
+  };
+
+  const getQuoteClientEmail = (quote) => {
+    const client = getQuoteClient(quote);
+    const email = resolveValue({ ...quote, client }, ['clientEmail', 'client.email', 'client.contactEmail', 'customer.email', 'email']);
+    return email || '—';
+  };
+
+  const getQuoteDate = (quote) => resolveValue(quote, ['date', 'createdAt', 'created_at', 'created', 'issuedAt', 'issued_at', 'quoteDate', 'generatedAt', 'generated_at']);
+
+  const getQuoteValidityDate = (quote) => resolveValue(quote, ['validUntil', 'validityDate', 'validity', 'valid_until', 'validity_date', 'expiresAt', 'expirationDate', 'expiration_date', 'expiryDate', 'expiry_date']);
+
+  const fetchClients = async () => {
+    try {
+      const response = await getClients();
+      const payload = response?.data?.data ?? response?.data ?? [];
+      setClients(Array.isArray(payload) ? payload : []);
+    } catch (error) {
+      console.error('Erreur de chargement des clients', error);
+    }
+  };
 
   const fetchQuotes = async () => {
     try {
       setLoading(true);
       const params = {};
       if (filters.status !== 'all') params.status = filters.status;
-      
+
       const response = await getQuotes(params);
-      setQuotes(response.data.data || []);
+      setQuotes(extractQuotes(response?.data));
     } catch (error) {
       toast.error('Erreur de chargement des devis');
     } finally {
@@ -39,6 +113,8 @@ const Quotes = () => {
       toast.error('Erreur lors de la suppression');
     }
   };
+
+  const clientMap = useMemo(() => new Map(clients.map((client) => [client.id, client])), [clients]);
 
   const getStatusBadge = (status) => {
     const badges = {
@@ -60,41 +136,85 @@ const Quotes = () => {
     return labels[status] || status;
   };
 
-  const filteredQuotes = quotes.filter(q =>
-    q.num?.toLowerCase().includes(search.toLowerCase()) ||
-    q.clientName?.toLowerCase().includes(search.toLowerCase())
-  );
+  const filteredQuotes = useMemo(() => {
+    const searchValue = search.trim().toLowerCase();
+
+    if (!searchValue) return quotes;
+
+    return quotes.filter((quote) => {
+      const haystack = [
+        quote.num,
+        quote.reference,
+        quote.number,
+        getQuoteClientName(quote),
+        getQuoteClientEmail(quote),
+        quote.client?.name,
+        quote.client?.email,
+        quote.id
+      ]
+        .filter(Boolean)
+        .map((value) => String(value).toLowerCase())
+        .join(' ');
+
+      return haystack.includes(searchValue);
+    });
+  }, [quotes, search]);
+
+  const openDetailsModal = (quote) => {
+    setSelectedQuote(quote);
+  };
+
+  const closeDetailsModal = () => {
+    setSelectedQuote(null);
+  };
 
   return (
     <div>
-      <div className="flex justify-between items-center mb-6">
-        <h1 className="text-2xl font-bold text-gray-800">Devis</h1>
-        <button 
-          onClick={() => toast.info('Formulaire d\'ajout de devis')}
-          className="bg-cyan-600 text-white px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-cyan-700 transition-colors"
-        >
-          <Plus size={20} /> Ajouter
-        </button>
+      <div className="page-head">
+        <div>
+          <div className="page-head-title">Devis</div>
+          <div className="page-head-sub">Consultation des devis clients et détails du document</div>
+        </div>
+        <div className="page-head-actions">
+          <button onClick={fetchQuotes} className="btn-ghost">
+            <RefreshCw size={18} /> Rafraîchir
+          </button>
+          <button onClick={() => toast('Formulaire d\'ajout de devis', { icon: '➕' })} className="btn-primary">
+            <Plus size={18} /> Ajouter
+          </button>
+        </div>
       </div>
 
-      <div className="bg-white rounded-xl shadow-sm p-4 mb-6">
-        <div className="flex flex-wrap gap-4">
-          <div className="flex-1 min-w-[200px]">
-            <div className="relative">
-              <Search className="absolute left-3 top-2.5 text-gray-400" size={18} />
-              <input
-                type="text"
-                placeholder="Rechercher un devis..."
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:outline-none"
-              />
+      <div className="order-summary-grid">
+        <div className="kpi-card order-summary-card">
+          <div className="kpi-top">
+            <div>
+              <div className="kpi-label">Devis</div>
+              <div className="kpi-value">{quotes.length}</div>
             </div>
+            <div className="kpi-icon" style={{ background: 'rgba(14, 165, 201, 0.12)', color: 'var(--aqua)' }}>
+              <FileCheck size={20} />
+            </div>
+          </div>
+          <div className="order-summary-meta">Documents générés</div>
+        </div>
+      </div>
+
+      <div className="table-card">
+        <div className="toolbar">
+          <div className="search-box">
+            <Search size={16} />
+            <input
+              type="text"
+              placeholder="Rechercher un devis ou un client..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
           </div>
           <select
             value={filters.status}
             onChange={(e) => setFilters({ ...filters, status: e.target.value })}
-            className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:outline-none"
+            className="f-input"
           >
             <option value="all">Tous statuts</option>
             <option value="brouillon">Brouillon</option>
@@ -103,64 +223,69 @@ const Quotes = () => {
             <option value="refuse">Refusé</option>
           </select>
         </div>
-      </div>
 
-      <div className="bg-white rounded-xl shadow-sm overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead className="bg-gray-50">
+          <table>
+            <thead>
               <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">N° Devis</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Client</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Date</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Total</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Validité</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Statut</th>
-                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Actions</th>
+                <th>N° Devis</th>
+                <th>Client</th>
+                <th>Date</th>
+                <th>Total</th>
+                <th>Validité</th>
+                <th>Statut</th>
+                <th>Actions</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-200">
+            <tbody>
               {loading ? (
-                <tr><td colSpan="7" className="text-center py-4">Chargement...</td></tr>
+                <tr><td colSpan="7" className="table-loader">Chargement...</td></tr>
               ) : filteredQuotes.length === 0 ? (
-                <tr><td colSpan="7" className="text-center py-4 text-gray-500">Aucun devis</td></tr>
+                <tr><td colSpan="7" className="table-empty">Aucun devis trouvé</td></tr>
               ) : (
                 filteredQuotes.map((quote) => (
-                  <tr key={quote.id} className="hover:bg-gray-50">
-                    <td className="px-6 py-4 font-medium text-cyan-600">
-                      D-{String(quote.id).slice(0, 4)}
+                  <tr key={quote.id}>
+                    <td>
+                      <div className="order-client-name">D-{String(quote.id).slice(0, 4)}</div>
                     </td>
-                    <td className="px-6 py-4">
-                      <div>
-                        <p className="font-medium text-gray-800">{quote.clientName}</p>
-                        <p className="text-sm text-gray-500">{quote.clientEmail}</p>
+                    <td>
+                      <div className="cell-prod">
+                        <div className="cell-emoji">📄</div>
+                        <div>
+                          <div className="order-client-name">{getQuoteClientName(quote)}</div>
+                          <div className="order-client-meta">{getQuoteClientEmail(quote)}</div>
+                        </div>
                       </div>
                     </td>
-                    <td className="px-6 py-4 text-gray-600">
-                      {quote.date?.toDate ? new Date(quote.date.toDate()).toLocaleDateString() : '—'}
+                    <td>
+                      <div className="order-client-name">{formatDate(getQuoteDate(quote))}</div>
                     </td>
-                    <td className="px-6 py-4 font-bold text-gray-800">{quote.total} DT</td>
-                    <td className="px-6 py-4 text-gray-600">
-                      {quote.validUntil?.toDate ? new Date(quote.validUntil.toDate()).toLocaleDateString() : '—'}
+                    <td>
+                      <div className="order-amount">{quote.total || 0} DT</div>
                     </td>
-                    <td className="px-6 py-4">
+                    <td>
+                      <div className="order-client-name">{formatDate(getQuoteValidityDate(quote))}</div>
+                    </td>
+                    <td>
                       <span className={`badge ${getStatusBadge(quote.status)}`}>
                         {getStatusLabel(quote.status)}
                       </span>
                     </td>
-                    <td className="px-6 py-4 text-right">
-                      <div className="flex justify-end gap-2">
-                        <button className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors">
-                          <Eye size={18} />
-                        </button>
-                        <button className="p-2 text-green-600 hover:bg-green-50 rounded-lg transition-colors">
-                          <Edit size={18} />
-                        </button>
-                        <button 
-                          onClick={() => handleDelete(quote.id)}
-                          className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                    <td>
+                      <div className="order-action-box">
+                        <button
+                          className="icon-btn"
+                          aria-label={`Voir les détails ${quote.id}`}
+                          onClick={() => openDetailsModal(quote)}
                         >
-                          <Trash2 size={18} />
+                          <Eye size={16} />
+                        </button>
+                        <button
+                          onClick={() => handleDelete(quote.id)}
+                          className="icon-btn"
+                          aria-label={`Supprimer ${quote.id}`}
+                        >
+                          <Trash2 size={16} />
                         </button>
                       </div>
                     </td>
@@ -169,6 +294,67 @@ const Quotes = () => {
               )}
             </tbody>
           </table>
+        </div>
+      </div>
+
+      <div className={`modal-overlay ${selectedQuote ? 'open' : ''}`}>
+        <div className="modal">
+          <div className="modal-hd">
+            <div>
+              <div className="modal-hd-title">Détails du devis</div>
+              <div className="modal-hd-sub">Informations complètes du document</div>
+            </div>
+            <button type="button" className="modal-x" onClick={closeDetailsModal}>
+              <X size={16} />
+            </button>
+          </div>
+
+          {selectedQuote && (
+            <div className="modal-body">
+              <div className="f-group">
+                <label className="f-label">Client</label>
+                <div className="f-input">{getQuoteClientName(selectedQuote)}</div>
+              </div>
+
+              <div className="f-row2">
+                <div className="f-group">
+                  <label className="f-label">Email</label>
+                  <div className="f-input">{getQuoteClientEmail(selectedQuote)}</div>
+                </div>
+                <div className="f-group">
+                  <label className="f-label">Date</label>
+                  <div className="f-input">{formatDate(getQuoteDate(selectedQuote))}</div>
+                </div>
+              </div>
+
+              <div className="f-row2">
+                <div className="f-group">
+                  <label className="f-label">Total</label>
+                  <div className="f-input">{selectedQuote.total || 0} DT</div>
+                </div>
+                <div className="f-group">
+                  <label className="f-label">Validité</label>
+                  <div className="f-input">{formatDate(getQuoteValidityDate(selectedQuote))}</div>
+                </div>
+              </div>
+
+              <div className="f-group">
+                <label className="f-label">Statut</label>
+                <div className="f-input">{getStatusLabel(selectedQuote.status)}</div>
+              </div>
+
+              <div className="f-group">
+                <label className="f-label">Référence</label>
+                <div className="f-input">D-{String(selectedQuote.id).slice(0, 4)}</div>
+              </div>
+            </div>
+          )}
+
+          <div className="modal-ft">
+            <button type="button" className="btn-ghost" onClick={closeDetailsModal}>
+              <X size={16} /> Fermer
+            </button>
+          </div>
         </div>
       </div>
     </div>

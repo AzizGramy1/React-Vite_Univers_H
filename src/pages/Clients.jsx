@@ -1,14 +1,25 @@
 // src/pages/Clients.jsx
-import React, { useState, useEffect } from 'react';
-import { getClients, deleteClient } from '../api/endpoints';
+import React, { useEffect, useMemo, useState } from 'react';
+import { getClients, deleteClient, updateClient } from '../api/endpoints';
 import toast from 'react-hot-toast';
-import { Plus, Edit, Trash2, Search } from 'lucide-react';
+import { Edit, Search, Trash2, Users, Sparkles, RefreshCw, X, Save } from 'lucide-react';
+
+const emptyClientForm = {
+  name: '',
+  email: '',
+  phone: '',
+  city: '',
+  type: 'b2c',
+  vip: 'false'
+};
 
 const Clients = () => {
   const [clients, setClients] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [filters, setFilters] = useState({ type: 'all', vip: 'all' });
+  const [editingClient, setEditingClient] = useState(null);
+  const [formData, setFormData] = useState(emptyClientForm);
 
   useEffect(() => {
     fetchClients();
@@ -20,7 +31,7 @@ const Clients = () => {
       const params = {};
       if (filters.type !== 'all') params.type = filters.type;
       if (filters.vip !== 'all') params.vip = filters.vip === 'true';
-      
+
       const response = await getClients(params);
       setClients(response.data.data || []);
     } catch (error) {
@@ -41,118 +52,219 @@ const Clients = () => {
     }
   };
 
-  const filteredClients = clients.filter(c =>
-    c.name?.toLowerCase().includes(search.toLowerCase()) ||
-    c.email?.toLowerCase().includes(search.toLowerCase())
+  const openEditModal = (client) => {
+    setEditingClient(client);
+    setFormData({
+      name: client.name || '',
+      email: client.email || '',
+      phone: client.phone || '',
+      city: client.city || '',
+      type: client.type || 'b2c',
+      vip: client.vip ? 'true' : 'false'
+    });
+  };
+
+  const closeEditModal = () => {
+    setEditingClient(null);
+    setFormData(emptyClientForm);
+  };
+
+  const handleSaveEdit = async (event) => {
+    event.preventDefault();
+
+    if (!editingClient) return;
+    if (!formData.name.trim() || !formData.email.trim()) {
+      toast.error('Le nom et l’email sont requis');
+      return;
+    }
+
+    try {
+      await updateClient(editingClient.id, {
+        ...editingClient,
+        ...formData,
+        vip: formData.vip === 'true'
+      });
+      toast.success('Client mis à jour');
+      closeEditModal();
+      fetchClients();
+    } catch (error) {
+      toast.error('Erreur lors de la mise à jour');
+    }
+  };
+
+  const filteredClients = useMemo(() =>
+    clients.filter((client) => {
+      const searchValue = search.toLowerCase();
+      return (
+        client.name?.toLowerCase().includes(searchValue) ||
+        client.email?.toLowerCase().includes(searchValue) ||
+        client.phone?.toLowerCase().includes(searchValue)
+      );
+    }),
+    [clients, search]
   );
+
+  const summary = useMemo(() => {
+    const vipCount = clients.filter((client) => client.vip).length;
+    const b2bCount = clients.filter((client) => client.type === 'b2b').length;
+
+    return {
+      total: clients.length,
+      vipCount,
+      b2bCount
+    };
+  }, [clients]);
 
   return (
     <div>
-      <div className="flex justify-between items-center mb-6">
-        <h1 className="text-2xl font-bold text-gray-800">Clients</h1>
-        <button 
-          onClick={() => toast.info('Formulaire d\'ajout de client')}
-          className="bg-cyan-600 text-white px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-cyan-700 transition-colors"
-        >
-          <Plus size={20} /> Ajouter
-        </button>
-      </div>
-
-      <div className="bg-white rounded-xl shadow-sm p-4 mb-6">
-        <div className="flex flex-wrap gap-4">
-          <div className="flex-1 min-w-[200px]">
-            <div className="relative">
-              <Search className="absolute left-3 top-2.5 text-gray-400" size={18} />
-              <input
-                type="text"
-                placeholder="Rechercher un client..."
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:outline-none"
-              />
-            </div>
-          </div>
-          <select
-            value={filters.type}
-            onChange={(e) => setFilters({ ...filters, type: e.target.value })}
-            className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:outline-none"
-          >
-            <option value="all">Tous types</option>
-            <option value="b2b">B2B</option>
-            <option value="b2c">B2C</option>
-          </select>
-          <select
-            value={filters.vip}
-            onChange={(e) => setFilters({ ...filters, vip: e.target.value })}
-            className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:outline-none"
-          >
-            <option value="all">Tous</option>
-            <option value="true">VIP</option>
-            <option value="false">Non VIP</option>
-          </select>
+      <div className="page-head">
+        <div>
+          <div className="page-head-title">Clients</div>
+          <div className="page-head-sub">Gestion des clients, segmentation VIP et suivi des contacts</div>
+        </div>
+        <div className="page-head-actions">
+          <button onClick={fetchClients} className="btn-ghost">
+            <RefreshCw size={18} /> Rafraîchir
+          </button>
         </div>
       </div>
 
-      <div className="bg-white rounded-xl shadow-sm overflow-hidden">
+      <div className="order-summary-grid">
+        <div className="kpi-card order-summary-card">
+          <div className="kpi-top">
+            <div>
+              <div className="kpi-label">Total clients</div>
+              <div className="kpi-value">{summary.total}</div>
+            </div>
+            <div className="kpi-icon" style={{ background: 'rgba(14, 165, 201, 0.12)', color: 'var(--aqua)' }}>
+              <Users size={20} />
+            </div>
+          </div>
+          <div className="order-summary-meta">Base clients active</div>
+        </div>
+
+        <div className="kpi-card order-summary-card">
+          <div className="kpi-top">
+            <div>
+              <div className="kpi-label">Clients VIP</div>
+              <div className="kpi-value">{summary.vipCount}</div>
+            </div>
+            <div className="kpi-icon" style={{ background: 'rgba(245, 158, 11, 0.12)', color: 'var(--amber)' }}>
+              <Sparkles size={20} />
+            </div>
+          </div>
+          <div className="order-summary-meta">À forte valeur</div>
+        </div>
+
+        <div className="kpi-card order-summary-card">
+          <div className="kpi-top">
+            <div>
+              <div className="kpi-label">B2B</div>
+              <div className="kpi-value">{summary.b2bCount}</div>
+            </div>
+            <div className="kpi-icon" style={{ background: 'rgba(139, 92, 246, 0.12)', color: 'var(--violet)' }}>
+              <Users size={20} />
+            </div>
+          </div>
+          <div className="order-summary-meta">Partenaires business</div>
+        </div>
+      </div>
+
+      <div className="table-card">
+        <div className="toolbar">
+          <div className="search-box">
+            <Search size={16} />
+            <input
+              type="text"
+              placeholder="Rechercher par nom, email ou téléphone..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+          </div>
+          <div className="toolbar-actions">
+            <select
+              value={filters.type}
+              onChange={(e) => setFilters({ ...filters, type: e.target.value })}
+              className="f-input"
+            >
+              <option value="all">Tous types</option>
+              <option value="b2b">B2B</option>
+              <option value="b2c">B2C</option>
+            </select>
+            <select
+              value={filters.vip}
+              onChange={(e) => setFilters({ ...filters, vip: e.target.value })}
+              className="f-input"
+            >
+              <option value="all">Tous</option>
+              <option value="true">VIP</option>
+              <option value="false">Non VIP</option>
+            </select>
+          </div>
+        </div>
+
         <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead className="bg-gray-50">
+          <table>
+            <thead>
               <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Client</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Téléphone</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Type</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Ville</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">VIP</th>
-                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Actions</th>
+                <th>Client</th>
+                <th>Téléphone</th>
+                <th>Type</th>
+                <th>Ville</th>
+                <th>VIP</th>
+                <th>Actions</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-200">
+            <tbody>
               {loading ? (
-                <tr><td colSpan="6" className="text-center py-4">Chargement...</td></tr>
+                <tr><td colSpan="6" className="table-loader">Chargement...</td></tr>
               ) : filteredClients.length === 0 ? (
-                <tr><td colSpan="6" className="text-center py-4 text-gray-500">Aucun client</td></tr>
+                <tr><td colSpan="6" className="table-empty">Aucun client trouvé</td></tr>
               ) : (
                 filteredClients.map((client) => (
-                  <tr key={client.id} className="hover:bg-gray-50">
-                    <td className="px-6 py-4">
-                      <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 bg-cyan-100 text-cyan-700 rounded-full flex items-center justify-center font-bold">
-                          {client.name?.charAt(0).toUpperCase()}
-                        </div>
+                  <tr key={client.id}>
+                    <td>
+                      <div className="cell-prod">
+                        <div className="cell-emoji">👤</div>
                         <div>
-                          <p className="font-medium text-gray-800">{client.name}</p>
-                          <p className="text-sm text-gray-500">{client.email}</p>
+                          <div className="order-client-name">{client.name}</div>
+                          <div className="order-client-meta">{client.email}</div>
                         </div>
                       </div>
                     </td>
-                    <td className="px-6 py-4 text-gray-600">{client.phone}</td>
-                    <td className="px-6 py-4">
-                      <span className={`px-2 py-1 rounded-full text-xs ${
-                        client.type === 'b2b' ? 'bg-blue-100 text-blue-700' : 'bg-orange-100 text-orange-700'
-                      }`}>
-                        {client.type?.toUpperCase()}
+                    <td>
+                      <div className="order-client-name">{client.phone || '—'}</div>
+                    </td>
+                    <td>
+                      <span className={`order-pill ${client.type === 'b2b' ? 'order-pill-product' : 'order-pill-service'}`}>
+                        {client.type?.toUpperCase() || 'B2C'}
                       </span>
                     </td>
-                    <td className="px-6 py-4 text-gray-600">{client.city}</td>
-                    <td className="px-6 py-4">
+                    <td>
+                      <div className="order-client-name">{client.city || '—'}</div>
+                    </td>
+                    <td>
                       {client.vip ? (
-                        <span className="px-2 py-1 rounded-full text-xs bg-yellow-100 text-yellow-700">
-                          ⭐ VIP
-                        </span>
+                        <span className="badge b-attente">⭐ VIP</span>
                       ) : (
-                        <span className="text-gray-400">—</span>
+                        <span className="badge b-inactif">Standard</span>
                       )}
                     </td>
-                    <td className="px-6 py-4 text-right">
-                      <div className="flex justify-end gap-2">
-                        <button className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors">
-                          <Edit size={18} />
-                        </button>
-                        <button 
-                          onClick={() => handleDelete(client.id)}
-                          className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                    <td>
+                      <div className="order-action-box">
+                        <button
+                          className="icon-btn"
+                          aria-label={`Modifier ${client.name}`}
+                          onClick={() => openEditModal(client)}
                         >
-                          <Trash2 size={18} />
+                          <Edit size={16} />
+                        </button>
+                        <button
+                          onClick={() => handleDelete(client.id)}
+                          className="icon-btn"
+                          aria-label={`Supprimer ${client.name}`}
+                        >
+                          <Trash2 size={16} />
                         </button>
                       </div>
                     </td>
@@ -161,6 +273,96 @@ const Clients = () => {
               )}
             </tbody>
           </table>
+        </div>
+      </div>
+
+      <div className={`modal-overlay ${editingClient ? 'open' : ''}`} onClick={closeEditModal}>
+        <div className="modal" onClick={(event) => event.stopPropagation()}>
+          <div className="modal-hd">
+            <div>
+              <div className="modal-hd-title">Modifier le client</div>
+              <div className="modal-hd-sub">Mettez à jour les informations du client</div>
+            </div>
+            <button className="modal-x" onClick={closeEditModal} aria-label="Fermer">
+              <X size={16} />
+            </button>
+          </div>
+
+          <form className="modal-body" onSubmit={handleSaveEdit}>
+            <div className="f-group">
+              <label className="f-label">Nom complet</label>
+              <input
+                className="f-input"
+                value={formData.name}
+                onChange={(event) => setFormData({ ...formData, name: event.target.value })}
+                placeholder="Nom du client"
+                required
+              />
+            </div>
+
+            <div className="f-group">
+              <label className="f-label">Email</label>
+              <input
+                className="f-input"
+                type="email"
+                value={formData.email}
+                onChange={(event) => setFormData({ ...formData, email: event.target.value })}
+                placeholder="email@exemple.com"
+                required
+              />
+            </div>
+
+            <div className="f-group">
+              <label className="f-label">Téléphone</label>
+              <input
+                className="f-input"
+                value={formData.phone}
+                onChange={(event) => setFormData({ ...formData, phone: event.target.value })}
+                placeholder="+216 12 345 678"
+              />
+            </div>
+
+            <div className="f-group">
+              <label className="f-label">Ville</label>
+              <input
+                className="f-input"
+                value={formData.city}
+                onChange={(event) => setFormData({ ...formData, city: event.target.value })}
+                placeholder="Ville"
+              />
+            </div>
+
+            <div className="f-group">
+              <label className="f-label">Type</label>
+              <select
+                className="f-input"
+                value={formData.type}
+                onChange={(event) => setFormData({ ...formData, type: event.target.value })}
+              >
+                <option value="b2b">B2B</option>
+                <option value="b2c">B2C</option>
+              </select>
+            </div>
+
+            <div className="f-group">
+              <label className="f-label">Statut VIP</label>
+              <select
+                className="f-input"
+                value={formData.vip}
+                onChange={(event) => setFormData({ ...formData, vip: event.target.value })}
+              >
+                <option value="true">VIP</option>
+                <option value="false">Standard</option>
+              </select>
+            </div>
+
+            <div className="modal-ft">
+              <button type="button" className="btn-ghost" onClick={closeEditModal}>Annuler</button>
+              <button type="submit" className="btn-ghost" style={{ background: 'var(--aqua)', color: '#fff', borderColor: 'var(--aqua)' }}>
+                <Save size={16} /> Enregistrer
+              </button>
+            </div>
+          </form>
         </div>
       </div>
     </div>
