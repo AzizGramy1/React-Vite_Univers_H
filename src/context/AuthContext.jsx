@@ -1,3 +1,4 @@
+// src/context/AuthContext.jsx
 import React, { createContext, useState, useEffect, useContext } from 'react';
 import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, signOut } from 'firebase/auth';
 import { app } from '../firebase/config';
@@ -6,7 +7,13 @@ import toast from 'react-hot-toast';
 
 const AuthContext = createContext();
 
-export const useAuth = () => useContext(AuthContext);
+export const useAuth = () => {
+  const context = useContext(AuthContext);
+  if (!context) {
+    throw new Error('useAuth doit être utilisé à l\'intérieur d\'un AuthProvider');
+  }
+  return context;
+};
 
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
@@ -23,7 +30,7 @@ export const AuthProvider = ({ children }) => {
           const response = await verifyToken(token);
           setUser(response.data);
         } catch (error) {
-          console.error('Erreur de vérification:', error);
+          console.error('Erreur de vérification du token:', error);
           setUser(null);
           localStorage.removeItem('firebaseToken');
         }
@@ -35,7 +42,7 @@ export const AuthProvider = ({ children }) => {
     });
 
     return () => unsubscribe();
-  }, []);
+  }, [auth]);
 
   const login = async (email, password) => {
     try {
@@ -45,12 +52,20 @@ export const AuthProvider = ({ children }) => {
       
       const response = await verifyToken(token);
       setUser(response.data);
-      toast.success('Connecté avec succès !');
+      toast.success('✅ Connecté avec succès !');
       return { success: true };
     } catch (error) {
       console.error('Erreur de connexion:', error);
-      toast.error(error.message || 'Erreur de connexion');
-      return { success: false, error: error.message };
+      let message = '❌ Erreur de connexion';
+      if (error.code === 'auth/user-not-found') {
+        message = '❌ Utilisateur non trouvé';
+      } else if (error.code === 'auth/wrong-password') {
+        message = '❌ Mot de passe incorrect';
+      } else if (error.code === 'auth/invalid-email') {
+        message = '❌ Email invalide';
+      }
+      toast.error(message);
+      return { success: false, error: message };
     }
   };
 
@@ -59,10 +74,10 @@ export const AuthProvider = ({ children }) => {
       await signOut(auth);
       localStorage.removeItem('firebaseToken');
       setUser(null);
-      toast.success('Déconnecté');
+      toast.success('👋 Déconnecté avec succès');
     } catch (error) {
       console.error('Erreur de déconnexion:', error);
-      toast.error('Erreur lors de la déconnexion');
+      toast.error('❌ Erreur lors de la déconnexion');
     }
   };
 

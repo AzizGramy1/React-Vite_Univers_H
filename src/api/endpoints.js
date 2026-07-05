@@ -1,4 +1,9 @@
+// src/api/endpoints.js
 import api from './axiosConfig';
+
+// ─── AUTHENTIFICATION ───
+export const verifyToken = (token) => api.post('/auth/verify', { token });
+export const getMe = () => api.get('/auth/me');
 
 // ─── PRODUITS ───
 export const getProducts = (params) => api.get('/products', { params });
@@ -66,7 +71,3 @@ export const getOffer = (id) => api.get(`/offers/${id}`);
 export const createOffer = (data) => api.post('/offers', data);
 export const updateOffer = (id, data) => api.put(`/offers/${id}`, data);
 export const deleteOffer = (id) => api.delete(`/offers/${id}`);
-
-// ─── AUTHENTIFICATION ───
-export const verifyToken = (token) => api.post('/auth/verify', { token });
-export const getMe = () => api.get('/auth/me');
